@@ -1,0 +1,1312 @@
+{
+  "name": "PSE Daily Market Wrap (Firecrawl + Apify + Bronze/Silver/Gold ML Lakehouse + Teams -> Canva -> FB/IG/Email)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 16 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "3c000001-0000-4000-8000-000000000001",
+      "name": "Schedule Trigger (4:30 PM PHT Mon-Fri)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "scrape",
+        "url": "https://edge.pse.com.ph/index/form.do",
+        "formats": [
+          "markdown",
+          "html"
+        ]
+      },
+      "id": "3c000001-0000-4000-8000-000000000002",
+      "name": "1a. Firecrawl (Scrape PSE Edge Index & Breadth)",
+      "type": "@mendable/n8n-nodes-firecrawl.firecrawl",
+      "typeVersion": 1,
+      "position": [
+        380,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ml_bronze_raw_ingestions",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "scraper_engine": "firecrawl",
+            "source_name": "pse_edge_index_summary",
+            "source_url": "https://edge.pse.com.ph/index/form.do",
+            "raw_markdown": "={{ $json.data?.markdown || $json.markdown || '' }}",
+            "raw_html": "={{ $json.data?.html || $json.html || '' }}",
+            "raw_payload": "={{ $json }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000003",
+      "name": "2a. Postgres Bronze: Save Raw Firecrawl Markdown & HTML (ML Lake)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.data?.markdown || $json.markdown || '' }}",
+        "schemaType": "fromJson",
+        "jsonSchemaExample": "{\n  \"as_of\": \"Oct 30, 2026 5:29 PM\",\n  \"psei_close\": 5680.35,\n  \"psei_change_pts\": -25.23,\n  \"psei_change_pct\": -0.44,\n  \"all_shares_pct\": -0.51,\n  \"financials_pct\": -0.50,\n  \"industrial_pct\": -0.24,\n  \"holding_firms_pct\": -0.96,\n  \"property_pct\": -0.13,\n  \"services_pct\": -0.25,\n  \"mining_oil_pct\": -1.19,\n  \"psei_total_return_close\": 2564.78,\n  \"pse_divy_close\": 1850.12,\n  \"pse_midcap_close\": 1420.55,\n  \"total_volume\": 685569892,\n  \"total_trades\": 60856,\n  \"total_value_turnover\": 17141809462,\n  \"advancers\": 63,\n  \"decliners\": 110,\n  \"unchanged\": 68\n}",
+        "options": {
+          "systemPromptTemplate": "Extract the exact Philippine Stock Exchange (PSE) daily index summary and official market breadth/totals into the target schema."
+        }
+      },
+      "id": "3c000001-0000-4000-8000-000000000004",
+      "name": "2b. Information Extractor (Structure Firecrawl Output)",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "actor",
+        "operation": "runActor",
+        "actorId": "apify/cheerio-scraper",
+        "additionalFields": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000005",
+      "name": "1b. Apify (Scrape PSE Disclosures & Official Frames)",
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 1,
+      "position": [
+        380,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ml_bronze_raw_ingestions",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "scraper_engine": "apify",
+            "source_name": "pse_frames_and_disclosures",
+            "source_url": "https://frames.pse.com.ph",
+            "raw_payload": "={{ $json }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000006",
+      "name": "2c. Postgres Bronze: Save Raw Apify Dataset (ML Lake)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://scanner.tradingview.com/philippines/scan",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"filter\": [\n    { \"left\": \"exchange\", \"operation\": \"equal\", \"right\": \"PSE\" }\n  ],\n  \"options\": { \"lang\": \"en\" },\n  \"markets\": [\"philippines\"],\n  \"symbols\": { \"query\": { \"types\": [] }, \"tickers\": [] },\n  \"columns\": [\n    \"name\",\n    \"close\",\n    \"change\",\n    \"change_abs\",\n    \"volume\",\n    \"Value.Traded\",\n    \"dividends_yield_current\"\n  ],\n  \"sort\": { \"sortBy\": \"Value.Traded\", \"sortOrder\": \"desc\" },\n  \"range\": [0, 300]\n}",
+        "options": {
+          "timeout": 25000
+        }
+      },
+      "id": "3c000001-0000-4000-8000-000000000007",
+      "name": "1c. Ingest PSE Stock Universe (TradingView Scanner)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        380,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ml_bronze_raw_ingestions",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "scraper_engine": "tradingview",
+            "source_name": "pse_stock_universe_scan",
+            "source_url": "https://scanner.tradingview.com/philippines/scan",
+            "raw_payload": "={{ $json }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000008",
+      "name": "2d. Postgres Bronze: Save Raw Stock Universe Payload (ML Lake)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        780
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000009",
+      "name": "3a. ETL Split Out (Unpack Stock Array)",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        660,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "col-symbol",
+              "name": "symbol",
+              "value": "={{ $json.d[0] }}",
+              "type": "string"
+            },
+            {
+              "id": "col-price",
+              "name": "price",
+              "value": "={{ $json.d[1] }}",
+              "type": "number"
+            },
+            {
+              "id": "col-pct",
+              "name": "percent_change",
+              "value": "={{ $json.d[2] }}",
+              "type": "number"
+            },
+            {
+              "id": "col-pts",
+              "name": "change_points",
+              "value": "={{ $json.d[3] }}",
+              "type": "number"
+            },
+            {
+              "id": "col-vol",
+              "name": "volume",
+              "value": "={{ $json.d[4] }}",
+              "type": "number"
+            },
+            {
+              "id": "col-val",
+              "name": "value_traded",
+              "value": "={{ $json.d[5] }}",
+              "type": "number"
+            },
+            {
+              "id": "col-div",
+              "name": "dividend_yield_ttm",
+              "value": "={{ $json.d[6] }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {
+          "ignoreConversionErrors": true
+        }
+      },
+      "id": "3c000001-0000-4000-8000-000000000010",
+      "name": "3b. ETL Edit Fields (Normalize & Type-Cast)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "compare": "selectedFields",
+        "fieldsToCompare": "symbol",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000011",
+      "name": "3c. ETL Remove Duplicates (By Ticker)",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 1.1,
+      "position": [
+        1140,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-price-gt-0",
+              "leftValue": "={{ $json.price }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "cond-vol-gt-0",
+              "leftValue": "={{ $json.volume }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000012",
+      "name": "3d. ETL Filter (Drop Untraded / Invalid Quotes)",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1380,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ml_silver_daily_stock_quotes",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "market_date": "={{ $now.toFormat('yyyy-MM-dd') }}",
+            "symbol": "={{ $json.symbol }}",
+            "price": "={{ $json.price }}",
+            "change_points": "={{ $json.change_points }}",
+            "percent_change": "={{ $json.percent_change }}",
+            "volume": "={{ $json.volume }}",
+            "value_traded": "={{ $json.value_traded }}",
+            "dividend_yield_ttm": "={{ $json.dividend_yield_ttm }}"
+          },
+          "matchingColumns": [
+            "market_date",
+            "symbol"
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000013",
+      "name": "3e. Postgres Silver: Upsert Filtered Daily Stock Quotes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1660,
+        980
+      ]
+    },
+    {
+      "parameters": {
+        "fieldsToSummarize": {
+          "values": [
+            {
+              "aggregation": "sum",
+              "field": "value_traded"
+            },
+            {
+              "aggregation": "sum",
+              "field": "volume"
+            },
+            {
+              "aggregation": "count",
+              "field": "symbol"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000014",
+      "name": "4a. ETL Summarize (Total Turnover & Volume)",
+      "type": "n8n-nodes-base.summarize",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-gainer",
+              "leftValue": "={{ $json.percent_change }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000015",
+      "name": "4b. ETL Filter Gainers (% Chg > 0)",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1660,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "percent_change",
+              "order": "descending"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000016",
+      "name": "4c. ETL Sort Gainers DESC",
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "maxItems": 3
+      },
+      "id": "3c000001-0000-4000-8000-000000000017",
+      "name": "4d. ETL Limit Top 3 Gainers",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "top_gainers",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000018",
+      "name": "4e. ETL Aggregate Top Gainers",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-loser",
+              "leftValue": "={{ $json.percent_change }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000019",
+      "name": "5b. ETL Filter Losers (% Chg < 0)",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1660,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "percent_change",
+              "order": "ascending"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000020",
+      "name": "5c. ETL Sort Losers ASC",
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "maxItems": 3
+      },
+      "id": "3c000001-0000-4000-8000-000000000021",
+      "name": "5d. ETL Limit Top 3 Losers",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "top_losers",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000022",
+      "name": "5e. ETL Aggregate Top Losers",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "value_traded",
+              "order": "descending"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000023",
+      "name": "6c. ETL Sort Most Active DESC",
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "maxItems": 3
+      },
+      "id": "3c000001-0000-4000-8000-000000000024",
+      "name": "6d. ETL Limit Top 3 Most Active",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "most_active",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000025",
+      "name": "6e. ETL Aggregate Most Active",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 5,
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000026",
+      "name": "7. ETL Merge All Transformed Streams",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2620,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chatMessage",
+        "operation": "sendAndWait",
+        "chatId": "YOUR_TEAMS_CHAT_ID",
+        "message": "=📈 **PSE Market Wrap Ready ({{ $json.output?.as_of || $now.toFormat('MMM dd, yyyy') }})**\n\n• **PSEi Close:** {{ $json.output?.psei_close }} ({{ $json.output?.psei_change_pts }} pts | {{ $json.output?.psei_change_pct }}%)\n• **Breadth:** {{ $json.output?.advancers }} Adv / {{ $json.output?.decliners }} Dec / {{ $json.output?.unchanged }} Unch\n• **Top Gainer:** {{ $json.top_gainers[0]?.symbol }} ({{ $json.top_gainers[0]?.percent_change?.toFixed(2) }}%)\n• **Top Loser:** {{ $json.top_losers[0]?.symbol }} ({{ $json.top_losers[0]?.percent_change?.toFixed(2) }}%)\n• **Most Active:** {{ $json.most_active[0]?.symbol }}\n\nPlease click below to provide:\n1. **Canva Graphic Caption** (injected into the Canva template)\n2. **Social Media Post Caption** (for Facebook, Instagram & Email)\n3. **Send Email Blast?** (`No` / `Yes`)",
+        "responseType": "customForm",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Canva Graphic Caption",
+              "fieldType": "textarea",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Social Media Post Caption",
+              "fieldType": "textarea",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Send Email Blast?",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "No"
+                  },
+                  {
+                    "option": "Yes"
+                  }
+                ]
+              },
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000027",
+      "name": "8. Microsoft Teams (Request Canva & Social Captions)",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [
+        2880,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "map-canva-caption",
+              "name": "graphic_caption",
+              "value": "={{ $json.data['Canva Graphic Caption'] }}",
+              "type": "string"
+            },
+            {
+              "id": "map-social-caption",
+              "name": "social_post_caption",
+              "value": "={{ $json.data['Social Media Post Caption'] }}",
+              "type": "string"
+            },
+            {
+              "id": "map-email-blast",
+              "name": "send_email_blast",
+              "value": "={{ $json.data['Send Email Blast?'] }}",
+              "type": "string"
+            },
+            {
+              "id": "map-psei-close",
+              "name": "psei_close",
+              "value": "={{ $('7. ETL Merge All Transformed Streams').item.json.output.psei_close }}",
+              "type": "number"
+            },
+            {
+              "id": "map-psei-pts",
+              "name": "psei_change_pts",
+              "value": "={{ $('7. ETL Merge All Transformed Streams').item.json.output.psei_change_pts }}",
+              "type": "number"
+            },
+            {
+              "id": "map-psei-pct",
+              "name": "psei_change_pct",
+              "value": "={{ $('7. ETL Merge All Transformed Streams').item.json.output.psei_change_pct }}",
+              "type": "number"
+            },
+            {
+              "id": "map-top-gainers",
+              "name": "top_gainers",
+              "value": "={{ $('7. ETL Merge All Transformed Streams').item.json.top_gainers }}",
+              "type": "array"
+            },
+            {
+              "id": "map-top-losers",
+              "name": "top_losers",
+              "value": "={{ $('7. ETL Merge All Transformed Streams').item.json.top_losers }}",
+              "type": "array"
+            },
+            {
+              "id": "map-most-active",
+              "name": "most_active",
+              "value": "={{ $('7. ETL Merge All Transformed Streams').item.json.most_active }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000028",
+      "name": "9a. Edit Fields (Prepare Canva Autofill & Gold Payload)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3140,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "design",
+        "operation": "export"
+      },
+      "id": "3c000001-0000-4000-8000-000000000029",
+      "name": "9b. Canva (Autofill Data + Teams Caption & Export PNG)",
+      "type": "@canva/n8n-nodes-canva.canva",
+      "typeVersion": 1,
+      "position": [
+        3400,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ml_gold_daily_market_wrap",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "market_date": "={{ $now.toFormat('yyyy-MM-dd') }}",
+            "as_of_label": "={{ $('7. ETL Merge All Transformed Streams').item.json.output.as_of }}",
+            "psei_close": "={{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.psei_close }}",
+            "psei_change_pts": "={{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.psei_change_pts }}",
+            "psei_change_pct": "={{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.psei_change_pct }}",
+            "advancers": "={{ $('7. ETL Merge All Transformed Streams').item.json.output.advancers }}",
+            "decliners": "={{ $('7. ETL Merge All Transformed Streams').item.json.output.decliners }}",
+            "unchanged": "={{ $('7. ETL Merge All Transformed Streams').item.json.output.unchanged }}",
+            "total_value_turnover": "={{ $('7. ETL Merge All Transformed Streams').item.json.output.total_value_turnover }}",
+            "top_gainers": "={{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.top_gainers }}",
+            "top_losers": "={{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.top_losers }}",
+            "most_active": "={{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.most_active }}",
+            "canva_graphic_caption": "={{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.graphic_caption }}",
+            "social_post_caption": "={{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.social_post_caption }}",
+            "send_email_blast": "={{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.send_email_blast }}",
+            "canva_exported_png_url": "={{ $json.url }}"
+          },
+          "matchingColumns": [
+            "market_date"
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000030",
+      "name": "9c. Postgres Gold: Save Market Wrap & Human Captions (ML Training Set)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3680,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v21.0",
+        "node": "YOUR_FACEBOOK_PAGE_ID",
+        "edge": "photos",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "url",
+                "value": "={{ $json.url }}"
+              },
+              {
+                "name": "caption",
+                "value": "={{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.social_post_caption }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3c000001-0000-4000-8000-000000000031",
+      "name": "10a. Facebook Graph API (Post Page Photo)",
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        3680,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v21.0",
+        "node": "YOUR_INSTAGRAM_BUSINESS_ID",
+        "edge": "media",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "image_url",
+                "value": "={{ $json.url }}"
+              },
+              {
+                "name": "caption",
+                "value": "={{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.social_post_caption }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3c000001-0000-4000-8000-000000000032",
+      "name": "10b. Instagram (Create Media Container)",
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        3680,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v21.0",
+        "node": "YOUR_INSTAGRAM_BUSINESS_ID",
+        "edge": "media_publish",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "creation_id",
+                "value": "={{ $json.id }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3c000001-0000-4000-8000-000000000033",
+      "name": "10c. Instagram (Publish Media)",
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        3940,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-email-blast",
+              "leftValue": "={{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.send_email_blast }}",
+              "rightValue": "Yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000034",
+      "name": "10d. Email Blast Selected? (IF)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3680,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "marketwrap@yourdomain.com",
+        "toEmail": "subscribers@yourdomain.com",
+        "subject": "=PSE Market Wrap — PSEi {{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.psei_close }}",
+        "html": "=<h2>PSE Daily Market Wrap</h2><p style=\"white-space:pre-line\">{{ $('9a. Edit Fields (Prepare Canva Autofill & Gold Payload)').item.json.social_post_caption }}</p><p><img src=\"{{ $('9b. Canva (Autofill Data + Teams Caption & Export PNG)').item.json.url }}\" width=\"600\" /></p>",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000035",
+      "name": "10e. Send Email Blast (Custom SMTP)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3940,
+        660
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (4:30 PM PHT Mon-Fri)": {
+      "main": [
+        [
+          {
+            "node": "1a. Firecrawl (Scrape PSE Edge Index & Breadth)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "1b. Apify (Scrape PSE Disclosures & Official Frames)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "1c. Ingest PSE Stock Universe (TradingView Scanner)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1a. Firecrawl (Scrape PSE Edge Index & Breadth)": {
+      "main": [
+        [
+          {
+            "node": "2a. Postgres Bronze: Save Raw Firecrawl Markdown & HTML (ML Lake)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "2b. Information Extractor (Structure Firecrawl Output)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2b. Information Extractor (Structure Firecrawl Output)": {
+      "main": [
+        [
+          {
+            "node": "7. ETL Merge All Transformed Streams",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1b. Apify (Scrape PSE Disclosures & Official Frames)": {
+      "main": [
+        [
+          {
+            "node": "2c. Postgres Bronze: Save Raw Apify Dataset (ML Lake)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1c. Ingest PSE Stock Universe (TradingView Scanner)": {
+      "main": [
+        [
+          {
+            "node": "2d. Postgres Bronze: Save Raw Stock Universe Payload (ML Lake)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "3a. ETL Split Out (Unpack Stock Array)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3a. ETL Split Out (Unpack Stock Array)": {
+      "main": [
+        [
+          {
+            "node": "3b. ETL Edit Fields (Normalize & Type-Cast)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3b. ETL Edit Fields (Normalize & Type-Cast)": {
+      "main": [
+        [
+          {
+            "node": "3c. ETL Remove Duplicates (By Ticker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3c. ETL Remove Duplicates (By Ticker)": {
+      "main": [
+        [
+          {
+            "node": "3d. ETL Filter (Drop Untraded / Invalid Quotes)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3d. ETL Filter (Drop Untraded / Invalid Quotes)": {
+      "main": [
+        [
+          {
+            "node": "3e. Postgres Silver: Upsert Filtered Daily Stock Quotes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "4a. ETL Summarize (Total Turnover & Volume)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "4b. ETL Filter Gainers (% Chg > 0)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "5b. ETL Filter Losers (% Chg < 0)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "6c. ETL Sort Most Active DESC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4a. ETL Summarize (Total Turnover & Volume)": {
+      "main": [
+        [
+          {
+            "node": "7. ETL Merge All Transformed Streams",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "4b. ETL Filter Gainers (% Chg > 0)": {
+      "main": [
+        [
+          {
+            "node": "4c. ETL Sort Gainers DESC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4c. ETL Sort Gainers DESC": {
+      "main": [
+        [
+          {
+            "node": "4d. ETL Limit Top 3 Gainers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4d. ETL Limit Top 3 Gainers": {
+      "main": [
+        [
+          {
+            "node": "4e. ETL Aggregate Top Gainers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4e. ETL Aggregate Top Gainers": {
+      "main": [
+        [
+          {
+            "node": "7. ETL Merge All Transformed Streams",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "5b. ETL Filter Losers (% Chg < 0)": {
+      "main": [
+        [
+          {
+            "node": "5c. ETL Sort Losers ASC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5c. ETL Sort Losers ASC": {
+      "main": [
+        [
+          {
+            "node": "5d. ETL Limit Top 3 Losers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5d. ETL Limit Top 3 Losers": {
+      "main": [
+        [
+          {
+            "node": "5e. ETL Aggregate Top Losers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5e. ETL Aggregate Top Losers": {
+      "main": [
+        [
+          {
+            "node": "7. ETL Merge All Transformed Streams",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "6c. ETL Sort Most Active DESC": {
+      "main": [
+        [
+          {
+            "node": "6d. ETL Limit Top 3 Most Active",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6d. ETL Limit Top 3 Most Active": {
+      "main": [
+        [
+          {
+            "node": "6e. ETL Aggregate Most Active",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6e. ETL Aggregate Most Active": {
+      "main": [
+        [
+          {
+            "node": "7. ETL Merge All Transformed Streams",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "7. ETL Merge All Transformed Streams": {
+      "main": [
+        [
+          {
+            "node": "8. Microsoft Teams (Request Canva & Social Captions)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "8. Microsoft Teams (Request Canva & Social Captions)": {
+      "main": [
+        [
+          {
+            "node": "9a. Edit Fields (Prepare Canva Autofill & Gold Payload)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9a. Edit Fields (Prepare Canva Autofill & Gold Payload)": {
+      "main": [
+        [
+          {
+            "node": "9b. Canva (Autofill Data + Teams Caption & Export PNG)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9b. Canva (Autofill Data + Teams Caption & Export PNG)": {
+      "main": [
+        [
+          {
+            "node": "9c. Postgres Gold: Save Market Wrap & Human Captions (ML Training Set)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "10a. Facebook Graph API (Post Page Photo)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "10b. Instagram (Create Media Container)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "10d. Email Blast Selected? (IF)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "10b. Instagram (Create Media Container)": {
+      "main": [
+        [
+          {
+            "node": "10c. Instagram (Publish Media)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "10d. Email Blast Selected? (IF)": {
+      "main": [
+        [
+          {
+            "node": "10e. Send Email Blast (Custom SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Manila",
+    "executionOrder": "v1"
+  }
+}
