@@ -1,0 +1,536 @@
+{
+  "name": "PSE Morning Notes (EODHD + News)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 30 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "4d000001-0000-4000-8000-000000000001",
+      "name": "1. Schedule Trigger (7:30 AM PHT Mon-Fri)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://eodhd.com/api/real-time/GSPC.INDX",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "s",
+              "value": "IXIC.INDX,DJI.INDX,XAUUSD.FOREX,PHP.FOREX"
+            },
+            {
+              "name": "api_token",
+              "value": "6ae412169700a8.31824440"
+            },
+            {
+              "name": "fmt",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "4d000001-0000-4000-8000-000000000002",
+      "name": "2a. EODHD Real-Time Quotes (Indices, Gold, USD-PHP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://eodhd.com/api/news",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "s",
+              "value": "GSPC.INDX"
+            },
+            {
+              "name": "limit",
+              "value": "8"
+            },
+            {
+              "name": "api_token",
+              "value": "6ae412169700a8.31824440"
+            },
+            {
+              "name": "fmt",
+              "value": "json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "4d000001-0000-4000-8000-000000000003",
+      "name": "2b. EODHD Foreign News (US Markets)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        300
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://scanner.tradingview.com/global/scan",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"symbols\": {\n    \"tickers\": [\n      \"TVC:US10Y\",\n      \"TVC:GOLD\",\n      \"NYMEX:CL1!\",\n      \"SP:SPX\",\n      \"NASDAQ:IXIC\",\n      \"DJ:DJI\",\n      \"FX_IDC:USDPHP\"\n    ]\n  },\n  \"columns\": [\n    \"name\",\n    \"description\",\n    \"close\",\n    \"change\",\n    \"change_abs\"\n  ]\n}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "4d000001-0000-4000-8000-000000000004",
+      "name": "2c. TradingView Fallback (US10Y, Gold, WTI Crude)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        300
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://news.google.com/rss/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "\"PSEi\" OR \"Philippine Stock Exchange\" OR \"Bangko Sentral\" OR \"peso\" when:1d"
+            },
+            {
+              "name": "hl",
+              "value": "en-PH"
+            },
+            {
+              "name": "gl",
+              "value": "PH"
+            },
+            {
+              "name": "ceid",
+              "value": "PH:en"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "id": "4d000001-0000-4000-8000-000000000005",
+      "name": "2d. Local News RSS (PSE, BSP, Peso)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        300
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---- 1. Quotes from EODHD (one item per ticker) ----\nconst eod = {};\nfor (const it of $('2a. EODHD Real-Time Quotes (Indices, Gold, USD-PHP)').all()) {\n  const j = it.json || {};\n  if (j.code) eod[j.code] = j;\n}\n\n// ---- 2. TradingView fallback (for tickers not on the EODHD free plan) ----\nconst tv = {};\nconst tvRes = ($('2c. TradingView Fallback (US10Y, Gold, WTI Crude)').first() || { json: {} }).json || {};\nfor (const r of (tvRes.data || [])) { if (r && r.s) tv[r.s] = r.d; }\n\nconst isNum = (v) => typeof v === 'number' && isFinite(v);\nconst sources = {};\nfunction pick(key, eodCode, tvSym, dec) {\n  const e = eodCode ? eod[eodCode] : null;\n  const t = tvSym ? tv[tvSym] : null;\n  let value = 0, pct = 0, src = 'none';\n  if (e && isNum(e.close) && isNum(e.change_p)) { value = e.close; pct = e.change_p; src = 'eodhd'; }\n  else if (t && isNum(t[2])) { value = t[2]; pct = isNum(t[3]) ? t[3] : 0; src = 'tradingview'; }\n  sources[key] = src;\n  value = Number(value.toFixed(dec));\n  pct = Number(pct.toFixed(2));\n  return {\n    value: value,\n    value_fmt: value.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec }),\n    chg_pct: pct,\n    chg_pct_fmt: (pct > 0 ? '+' : '') + pct.toFixed(2) + '%',\n    arrow: pct > 0 ? '▲' : (pct < 0 ? '▼' : '▬')\n  };\n}\n\nconst markets = {\n  nasdaq:    pick('nasdaq',    'IXIC.INDX',    'NASDAQ:IXIC',   2),\n  sp500:     pick('sp500',     'GSPC.INDX',    'SP:SPX',        2),\n  dow:       pick('dow',       'DJI.INDX',     'DJ:DJI',        2),\n  us10yr:    pick('us10yr',    null,           'TVC:US10Y',     3),\n  gold:      pick('gold',      'XAUUSD.FOREX', 'TVC:GOLD',      2),\n  wti_crude: pick('wti_crude', null,           'NYMEX:CL1!',    2),\n  usd_php:   pick('usd_php',   'PHP.FOREX',    'FX_IDC:USDPHP', 2)\n};\n\n// ---- 3. Foreign news (EODHD) ----\nconst decode = (s) => String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\").replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();\nconst seen = new Set();\nconst foreign_news = $('2b. EODHD Foreign News (US Markets)').all()\n  .map((i) => i.json || {})\n  .filter((n) => n.title)\n  .map((n) => ({ title: decode(n.title), link: n.link || '', date: n.date || '' }))\n  .filter((n) => { const k = n.title.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; })\n  .slice(0, 5);\n\n// ---- 4. Local news (Google News RSS, PH edition) ----\nconst xml = String((($('2d. Local News RSS (PSE, BSP, Peso)').first() || { json: {} }).json || {}).data || '');\nconst local_news = [];\nconst itemRe = /<item>([\\s\\S]*?)<\\/item>/g;\nlet m;\nwhile ((m = itemRe.exec(xml)) && local_news.length < 5) {\n  const block = m[1];\n  const get = (tag) => { const r = new RegExp('<' + tag + '[^>]*>([\\\\s\\\\S]*?)<\\\\/' + tag + '>').exec(block); return r ? decode(r[1].replace(/<!\\[CDATA\\[|\\]\\]>/g, '')) : ''; };\n  const source = get('source');\n  let title = get('title');\n  if (source && title.endsWith(' - ' + source)) title = title.slice(0, -(' - ' + source).length);\n  if (title.length > 180) title = title.slice(0, 177).trim() + '...';\n  const k = title.toLowerCase();\n  if (!title || seen.has(k) || source === 'Facebook') continue;\n  seen.add(k);\n  local_news.push({ title: title, source: source, link: get('link'), date: get('pubDate') });\n}\n\n// ---- 5. Formatted output (text + Teams HTML) ----\nconst labels = [['NASDAQ', 'nasdaq'], ['S&P 500', 'sp500'], ['DOW JONES IND', 'dow'], ['US 10YR', 'us10yr'], ['GOLD', 'gold'], ['WTI CRUDE', 'wti_crude'], ['USD - PHP', 'usd_php']];\nconst asOf = $now.setZone('Asia/Manila').toFormat('MMM dd, yyyy');\nconst marketLines = labels.map((l) => { const q = markets[l[1]]; return l[0] + ': ' + q.value_fmt + ' (' + q.arrow + ' ' + q.chg_pct_fmt + ')'; });\nconst fLines = foreign_news.map((n) => '• ' + n.title);\nconst lLines = local_news.map((n) => '• ' + n.title + (n.source ? ' (' + n.source + ')' : ''));\nconst text = ['Morning Notes - ' + asOf, '', ...marketLines, '', 'Foreign News', ...fLines, '', 'Local News', ...lLines].join('\\n');\nconst esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst html = '<b>☀️ Morning Notes - ' + esc(asOf) + '</b><br><br>' +\n  marketLines.map(esc).join('<br>') +\n  '<br><br><b>Foreign News</b><br>' + (fLines.length ? fLines.map(esc).join('<br>') : '• (none)') +\n  '<br><br><b>Local News</b><br>' + (lLines.length ? lLines.map(esc).join('<br>') : '• (none)');\n\nreturn [{ json: {\n  market_date: $now.setZone('Asia/Manila').toFormat('yyyy-MM-dd'),\n  as_of: asOf,\n  ...markets,\n  foreign_news: foreign_news,\n  local_news: local_news,\n  data_sources: sources,\n  morning_notes_text: text,\n  morning_notes_html: html\n} }];"
+      },
+      "id": "4d000001-0000-4000-8000-000000000006",
+      "name": "3. Build Morning Notes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ml_gold_morning_notes",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "market_date": "={{ $json.market_date }}",
+            "nasdaq_value": "={{ $json.nasdaq.value }}",
+            "nasdaq_chg_pct": "={{ $json.nasdaq.chg_pct }}",
+            "sp500_value": "={{ $json.sp500.value }}",
+            "sp500_chg_pct": "={{ $json.sp500.chg_pct }}",
+            "dow_value": "={{ $json.dow.value }}",
+            "dow_chg_pct": "={{ $json.dow.chg_pct }}",
+            "us10yr_value": "={{ $json.us10yr.value }}",
+            "us10yr_chg_pct": "={{ $json.us10yr.chg_pct }}",
+            "gold_value": "={{ $json.gold.value }}",
+            "gold_chg_pct": "={{ $json.gold.chg_pct }}",
+            "wti_crude_value": "={{ $json.wti_crude.value }}",
+            "wti_crude_chg_pct": "={{ $json.wti_crude.chg_pct }}",
+            "usd_php_value": "={{ $json.usd_php.value }}",
+            "usd_php_chg_pct": "={{ $json.usd_php.chg_pct }}",
+            "foreign_news": "={{ JSON.stringify($json.foreign_news) }}",
+            "local_news": "={{ JSON.stringify($json.local_news) }}",
+            "data_sources": "={{ JSON.stringify($json.data_sources) }}"
+          },
+          "matchingColumns": [
+            "market_date"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "market_date",
+              "displayName": "market_date",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nasdaq_value",
+              "displayName": "nasdaq_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "nasdaq_chg_pct",
+              "displayName": "nasdaq_chg_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "sp500_value",
+              "displayName": "sp500_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "sp500_chg_pct",
+              "displayName": "sp500_chg_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "dow_value",
+              "displayName": "dow_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "dow_chg_pct",
+              "displayName": "dow_chg_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "us10yr_value",
+              "displayName": "us10yr_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "us10yr_chg_pct",
+              "displayName": "us10yr_chg_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "gold_value",
+              "displayName": "gold_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "gold_chg_pct",
+              "displayName": "gold_chg_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "wti_crude_value",
+              "displayName": "wti_crude_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "wti_crude_chg_pct",
+              "displayName": "wti_crude_chg_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "usd_php_value",
+              "displayName": "usd_php_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "usd_php_chg_pct",
+              "displayName": "usd_php_chg_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "foreign_news",
+              "displayName": "foreign_news",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "local_news",
+              "displayName": "local_news",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "data_sources",
+              "displayName": "data_sources",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "4d000001-0000-4000-8000-000000000007",
+      "name": "4. Postgres Gold: Save Morning Notes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1440,
+        180
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qcf4JLMVO7YYOUKK",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chatMessage",
+        "chatId": {
+          "__rl": true,
+          "value": "YOUR_TEAMS_CHAT_ID",
+          "mode": "id"
+        },
+        "messageType": "html",
+        "message": "={{ $json.morning_notes_html }}",
+        "options": {}
+      },
+      "id": "4d000001-0000-4000-8000-000000000008",
+      "name": "5. Microsoft Teams (Post Morning Notes)",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        420
+      ],
+      "credentials": {
+        "microsoftTeamsOAuth2Api": {
+          "id": "IwBQqE9yzGpi83Kx",
+          "name": "Microsoft Teams account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "1. Schedule Trigger (7:30 AM PHT Mon-Fri)": {
+      "main": [
+        [
+          {
+            "node": "2a. EODHD Real-Time Quotes (Indices, Gold, USD-PHP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2a. EODHD Real-Time Quotes (Indices, Gold, USD-PHP)": {
+      "main": [
+        [
+          {
+            "node": "2b. EODHD Foreign News (US Markets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2b. EODHD Foreign News (US Markets)": {
+      "main": [
+        [
+          {
+            "node": "2c. TradingView Fallback (US10Y, Gold, WTI Crude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2c. TradingView Fallback (US10Y, Gold, WTI Crude)": {
+      "main": [
+        [
+          {
+            "node": "2d. Local News RSS (PSE, BSP, Peso)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2d. Local News RSS (PSE, BSP, Peso)": {
+      "main": [
+        [
+          {
+            "node": "3. Build Morning Notes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Build Morning Notes": {
+      "main": [
+        [
+          {
+            "node": "4. Postgres Gold: Save Morning Notes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "5. Microsoft Teams (Post Morning Notes)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Manila",
+    "executionOrder": "v1"
+  }
+}

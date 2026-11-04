@@ -31,6 +31,8 @@ services:
       - N8N_PROTOCOL=http
       - NODE_ENV=production
       - WEBHOOK_URL=http://localhost:5678/
+      - N8N_SECURE_COOKIE=false
+      - N8N_SKIP_AUTH_ON_OAUTH_CALLBACK=true
       - GENERIC_TIMEZONE=Asia/Manila
       - TZ=Asia/Manila
       - DB_TYPE=postgresdb

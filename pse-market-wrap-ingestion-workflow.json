@@ -1,0 +1,2518 @@
+{
+  "name": "PSE Daily Market Wrap - 1. Ingestion & Lakehouse ETL Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 16 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "3c000001-0000-4000-8000-000000000001",
+      "name": "Schedule Trigger (4:30 PM PHT Mon-Fri)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        420
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "3c000001-0000-4000-8000-000000000000",
+      "name": "Manual Trigger (Run ETL Ingestion)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://edge.pse.com.ph/index/form.do",
+        "requestOptions": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000002",
+      "name": "1a. Firecrawl (Scrape PSE Edge Index & Breadth)",
+      "type": "@mendable/n8n-nodes-firecrawl.firecrawl",
+      "typeVersion": 1,
+      "position": [
+        380,
+        140
+      ],
+      "credentials": {
+        "firecrawlApi": {
+          "id": "Lq972iNBYk1oUyHz",
+          "name": "Firecrawl account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ml_bronze_raw_ingestions",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "scraper_engine": "firecrawl",
+            "source_name": "pse_edge_index_summary",
+            "source_url": "https://edge.pse.com.ph/index/form.do",
+            "raw_markdown": "={{ $json.data?.markdown || $json.markdown || '' }}",
+            "raw_html": "={{ $json.data?.html || $json.html || '' }}",
+            "raw_payload": "={{ $json }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "market_date",
+              "displayName": "market_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "scraper_engine",
+              "displayName": "scraper_engine",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_name",
+              "displayName": "source_name",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_url",
+              "displayName": "source_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_markdown",
+              "displayName": "raw_markdown",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_html",
+              "displayName": "raw_html",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_payload",
+              "displayName": "raw_payload",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ingested_at",
+              "displayName": "ingested_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000003",
+      "name": "2a. Postgres Bronze: Save Raw Firecrawl Markdown & HTML (ML Lake)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qcf4JLMVO7YYOUKK",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ext-as-of",
+              "name": "output.as_of",
+              "value": "={{ (($json.data?.markdown || $json.markdown || '').match(/As of\\s+([^|\\n]+)/)?.[1] || $now.toFormat('MMM d, yyyy h:mm a')).trim() }}",
+              "type": "string"
+            },
+            {
+              "id": "ext-psei-close",
+              "name": "output.psei_close",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*PSEi\\s*\\|\\s*([\\d,.]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-psei-arrow",
+              "name": "output.psei_arrow",
+              "value": "={{ (($json.data?.markdown || $json.markdown || '').match(/\\|\\s*PSEi\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+(▲|▼)/)?.[1]) || '▲' }}",
+              "type": "string"
+            },
+            {
+              "id": "ext-psei-updown",
+              "name": "output.psei_up_down",
+              "value": "={{ (($json.data?.markdown || $json.markdown || '').match(/\\|\\s*PSEi\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+(▲|▼)/)?.[1]) === '▼' ? 'DOWN' : 'UP' }}",
+              "type": "string"
+            },
+            {
+              "id": "ext-psei-chg",
+              "name": "output.psei_change_pts",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*PSEi\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[1].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-psei-pct",
+              "name": "output.psei_change_pct",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*PSEi\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[2].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-tot-vol",
+              "name": "output.total_volume",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Total Volume\\s*\\|\\s*([\\d,]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-tot-trd",
+              "name": "output.total_trades",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Total Trades\\s*\\|\\s*([\\d,]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-tot-val",
+              "name": "output.total_value_turnover",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Total Value\\s*\\|\\s*([\\d,.]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-adv",
+              "name": "output.advancers",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Advances\\s*\\|\\s*([\\d,]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-dec",
+              "name": "output.decliners",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Declines\\s*\\|\\s*([\\d,]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-unch",
+              "name": "output.unchanged",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Unchanged\\s*\\|\\s*([\\d,]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-all-arrow",
+              "name": "output.all_shares_arrow",
+              "value": "={{ (($json.data?.markdown || $json.markdown || '').match(/\\|\\s*All Shares\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+(▲|▼)/)?.[1]) || '▲' }}",
+              "type": "string"
+            },
+            {
+              "id": "ext-all-close",
+              "name": "output.all_shares_close",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*All Shares\\s*\\|\\s*([\\d,.]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-all-pts",
+              "name": "output.all_shares_change_pts",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*All Shares\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[1].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-all-pct",
+              "name": "output.all_shares_pct",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*All Shares\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[2].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-fin-arrow",
+              "name": "output.financials_arrow",
+              "value": "={{ (($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Financials\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+(▲|▼)/)?.[1]) || '▲' }}",
+              "type": "string"
+            },
+            {
+              "id": "ext-fin-close",
+              "name": "output.financials_close",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Financials\\s*\\|\\s*([\\d,.]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-fin-pts",
+              "name": "output.financials_change_pts",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Financials\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[1].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-fin-pct",
+              "name": "output.financials_pct",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Financials\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[2].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-ind-arrow",
+              "name": "output.industrial_arrow",
+              "value": "={{ (($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Industrial\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+(▲|▼)/)?.[1]) || '▲' }}",
+              "type": "string"
+            },
+            {
+              "id": "ext-ind-close",
+              "name": "output.industrial_close",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Industrial\\s*\\|\\s*([\\d,.]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-ind-pts",
+              "name": "output.industrial_change_pts",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Industrial\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[1].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-ind-pct",
+              "name": "output.industrial_pct",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Industrial\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[2].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-hld-arrow",
+              "name": "output.holding_firms_arrow",
+              "value": "={{ (($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Holding Firms\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+(▲|▼)/)?.[1]) || '▲' }}",
+              "type": "string"
+            },
+            {
+              "id": "ext-hld-close",
+              "name": "output.holding_firms_close",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Holding Firms\\s*\\|\\s*([\\d,.]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-hld-pts",
+              "name": "output.holding_firms_change_pts",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Holding Firms\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[1].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-hld-pct",
+              "name": "output.holding_firms_pct",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Holding Firms\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[2].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-prp-arrow",
+              "name": "output.property_arrow",
+              "value": "={{ (($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Property\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+(▲|▼)/)?.[1]) || '▲' }}",
+              "type": "string"
+            },
+            {
+              "id": "ext-prp-close",
+              "name": "output.property_close",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Property\\s*\\|\\s*([\\d,.]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-prp-pts",
+              "name": "output.property_change_pts",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Property\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[1].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-prp-pct",
+              "name": "output.property_pct",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Property\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[2].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-svc-arrow",
+              "name": "output.services_arrow",
+              "value": "={{ (($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Services\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+(▲|▼)/)?.[1]) || '▲' }}",
+              "type": "string"
+            },
+            {
+              "id": "ext-svc-close",
+              "name": "output.services_close",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Services\\s*\\|\\s*([\\d,.]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-svc-pts",
+              "name": "output.services_change_pts",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Services\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[1].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-svc-pct",
+              "name": "output.services_pct",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Services\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[2].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-min-arrow",
+              "name": "output.mining_oil_arrow",
+              "value": "={{ (($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Mining and Oil\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*[\\d,.]+(▲|▼)/)?.[1]) || '▲' }}",
+              "type": "string"
+            },
+            {
+              "id": "ext-min-close",
+              "name": "output.mining_oil_close",
+              "value": "={{ Number((($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Mining and Oil\\s*\\|\\s*([\\d,.]+)/)?.[1] || '0').replace(/,/g, '')) }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-min-pts",
+              "name": "output.mining_oil_change_pts",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Mining and Oil\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[1].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-min-pct",
+              "name": "output.mining_oil_pct",
+              "value": "={{ (() => { const m = ($json.data?.markdown || $json.markdown || '').match(/\\|\\s*Mining and Oil\\s*\\|\\s*[\\d,.]+\\s*\\|\\s*([\\d,.]+)\\s*\\|\\s*([\\d,.]+)(▲|▼)?/); return m ? Number(m[2].replace(/,/g, '')) * (m[3] === '▼' ? -1 : 1) : 0; })() }}",
+              "type": "number"
+            },
+            {
+              "id": "ext-sectors-arr",
+              "name": "output.sectors_summary",
+              "value": "={{ (() => { const md = $json.data?.markdown || $json.markdown || ''; const parseRow = (label, display) => { const m = md.match(new RegExp('\\\\|\\\\s*' + label + '\\\\s*\\\\|\\\\s*([\\\\d,.]+)\\\\s*\\\\|\\\\s*([\\\\d,.]+)\\\\s*\\\\|\\\\s*([\\\\d,.]+)(▲|▼)?')); const arrow = m?.[4] || '▲'; const sign = arrow === '▼' ? -1 : 1; return { sector: display, arrow, up_down: arrow === '▼' ? 'DOWN' : 'UP', value: m ? Number(m[1].replace(/,/g, '')) : 0, change_pts: m ? Number(m[2].replace(/,/g, '')) * sign : 0, change_pct: m ? Number(m[3].replace(/,/g, '')) * sign : 0 }; }; return [ parseRow('All Shares', 'All Shares'), parseRow('Financials', 'Financial'), parseRow('Industrial', 'Industrial'), parseRow('Holding Firms', 'Holding Firms'), parseRow('Property', 'Property'), parseRow('Services', 'Services'), parseRow('Mining and Oil', 'Mining & Oil') ]; })() }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000004",
+      "name": "2b. Information Extractor (Structure Firecrawl Output)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "actorSource": "store",
+        "actorId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "IaZCT8ovSQx3ct8YM",
+          "cachedResultUrl": "https://console.apify.com/actors/IaZCT8ovSQx3ct8YM/input",
+          "cachedResultName": "PSE Stock Quotes (romy/pse-stock-quotes)"
+        },
+        "customBody": "{\n  \"symbols\": [\n    \"GLO\",\n    \"TEL\",\n    \"SCC\",\n    \"RCR\",\n    \"LTG\",\n    \"MBT\",\n    \"MREIT\",\n    \"DMC\",\n    \"FILRT\",\n    \"CREIT\",\n    \"AREIT\",\n    \"PREIT\"\n  ]\n}"
+      },
+      "id": "3c000001-0000-4000-8000-000000000005",
+      "name": "1b. Apify (Scrape PSE Disclosures & Official Frames)",
+      "type": "@apify/n8n-nodes-apify.apify",
+      "typeVersion": 1,
+      "position": [
+        380,
+        380
+      ],
+      "credentials": {
+        "apifyApi": {
+          "id": "L9zQBWY7SGpjHFxc",
+          "name": "Apify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ml_bronze_raw_ingestions",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "scraper_engine": "apify",
+            "source_name": "pse_frames_and_disclosures",
+            "source_url": "https://frames.pse.com.ph",
+            "raw_payload": "={{ $json }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "market_date",
+              "displayName": "market_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "scraper_engine",
+              "displayName": "scraper_engine",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_name",
+              "displayName": "source_name",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_url",
+              "displayName": "source_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_markdown",
+              "displayName": "raw_markdown",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_html",
+              "displayName": "raw_html",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_payload",
+              "displayName": "raw_payload",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ingested_at",
+              "displayName": "ingested_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000006",
+      "name": "2c. Postgres Bronze: Save Raw Apify Dataset (ML Lake)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        380
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qcf4JLMVO7YYOUKK",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://webapi.investagrams.com/InvestaApi/Stock/GetAllLatestActiveStockPriceRealTime",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "exchangeType",
+              "value": "1"
+            },
+            {
+              "name": "page",
+              "value": "0"
+            },
+            {
+              "name": "sortColumn",
+              "value": "Value"
+            },
+            {
+              "name": "sortReverse",
+              "value": "true"
+            },
+            {
+              "name": "irt",
+              "value": "true"
+            },
+            {
+              "name": "limitByColumn",
+              "value": "false"
+            },
+            {
+              "name": "resultGroup",
+              "value": "1"
+            },
+            {
+              "name": "isNeedMajorIndex",
+              "value": "false"
+            },
+            {
+              "name": "competitionId",
+              "value": "-1"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Referer",
+              "value": "https://www.investagrams.com/"
+            },
+            {
+              "name": "Origin",
+              "value": "https://www.investagrams.com"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 25000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          },
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "page",
+                    "value": "={{ $pageCount }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "responseIsEmpty",
+              "limitPagesFetched": true,
+              "maxRequests": 6
+            }
+          }
+        }
+      },
+      "id": "3c000001-0000-4000-8000-000000000007",
+      "name": "1c. Ingest PSE Stock Universe (TradingView Scanner)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        380,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ml_bronze_raw_ingestions",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "scraper_engine": "investagrams_pse",
+            "source_name": "pse_stock_universe_scan",
+            "source_url": "https://webapi.investagrams.com/InvestaApi/Stock/GetAllLatestActiveStockPriceRealTime",
+            "raw_payload": "={{ $json }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "market_date",
+              "displayName": "market_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "scraper_engine",
+              "displayName": "scraper_engine",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_name",
+              "displayName": "source_name",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_url",
+              "displayName": "source_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_markdown",
+              "displayName": "raw_markdown",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_html",
+              "displayName": "raw_html",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "raw_payload",
+              "displayName": "raw_payload",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ingested_at",
+              "displayName": "ingested_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000008",
+      "name": "2d. Postgres Bronze: Save Raw Stock Universe Payload (ML Lake)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        660,
+        780
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qcf4JLMVO7YYOUKK",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "body",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000009",
+      "name": "3a. ETL Split Out (Unpack Stock Array)",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        660,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "col-symbol",
+              "name": "symbol",
+              "value": "={{ $json.StockCode }}",
+              "type": "string"
+            },
+            {
+              "id": "col-name",
+              "name": "name",
+              "value": "={{ ($json.StockName || $json.StockCode || '').replace(\"Int'l\", 'International') }}",
+              "type": "string"
+            },
+            {
+              "id": "col-price",
+              "name": "price",
+              "value": "={{ Number(($json.Last || 0).toFixed(2)) }}",
+              "type": "number"
+            },
+            {
+              "id": "col-price-fmt",
+              "name": "price_formatted",
+              "value": "={{ '₱' + Number($json.Last || 0).toFixed(2) }}",
+              "type": "string"
+            },
+            {
+              "id": "col-pct",
+              "name": "percent_change",
+              "value": "={{ Number(($json.ChangePercentage || 0).toFixed(2)) }}",
+              "type": "number"
+            },
+            {
+              "id": "col-pct-fmt",
+              "name": "percent_change_formatted",
+              "value": "={{ (Number($json.ChangePercentage || 0) > 0 ? '+' : '') + Number($json.ChangePercentage || 0).toFixed(2) + '%' }}",
+              "type": "string"
+            },
+            {
+              "id": "col-pts",
+              "name": "change_points",
+              "value": "={{ Number((($json.Last || 0) - (($json.Last || 0) / (1 + (($json.ChangePercentage || 0) / 100)))).toFixed(4)) }}",
+              "type": "number"
+            },
+            {
+              "id": "col-vol",
+              "name": "volume",
+              "value": "={{ Number($json.Volume || 0) }}",
+              "type": "number"
+            },
+            {
+              "id": "col-val",
+              "name": "value_traded",
+              "value": "={{ Number(($json.Value || 0).toFixed(2)) }}",
+              "type": "number"
+            },
+            {
+              "id": "col-val-fmt",
+              "name": "value_traded_formatted",
+              "value": "={{ '₱' + (($json.Value || 0) >= 1e9 ? (($json.Value || 0) / 1e9).toFixed(1) + 'B' : (($json.Value || 0) >= 1e6 ? (($json.Value || 0) / 1e6).toFixed(1) + 'M' : (($json.Value || 0) >= 1e3 ? (($json.Value || 0) / 1e3).toFixed(1) + 'K' : Number($json.Value || 0).toFixed(2)))) }}",
+              "type": "string"
+            },
+            {
+              "id": "col-trades",
+              "name": "trades",
+              "value": "={{ Number($json.Trades || 0) }}",
+              "type": "number"
+            },
+            {
+              "id": "col-trades-fmt",
+              "name": "trades_formatted",
+              "value": "={{ Number($json.Trades || 0).toLocaleString() }}",
+              "type": "string"
+            },
+            {
+              "id": "col-div-yield",
+              "name": "dividend_yield_ttm",
+              "value": "={{ Number(($json.StockDivTTM || 0).toFixed(2)) }}",
+              "type": "number"
+            },
+            {
+              "id": "col-div-dps",
+              "name": "div_per_share_ttm",
+              "value": "={{ Number((($json.Last || 0) * (($json.StockDivTTM || 0) / 100)).toFixed(2)) }}",
+              "type": "number"
+            },
+            {
+              "id": "col-board-lot",
+              "name": "board_lot",
+              "value": "={{ ($json.Last || 0) >= 1000 ? 5 : ($json.Last || 0) >= 50 ? 10 : ($json.Last || 0) >= 5 ? 100 : ($json.Last || 0) >= 0.5 ? 1000 : ($json.Last || 0) >= 0.05 ? 10000 : ($json.Last || 0) >= 0.01 ? 100000 : 1000000 }}",
+              "type": "number"
+            },
+            {
+              "id": "col-min-inv",
+              "name": "min_investment",
+              "value": "={{ Number((($json.Last || 0) * (($json.Last || 0) >= 1000 ? 5 : ($json.Last || 0) >= 50 ? 10 : ($json.Last || 0) >= 5 ? 100 : ($json.Last || 0) >= 0.5 ? 1000 : ($json.Last || 0) >= 0.05 ? 10000 : ($json.Last || 0) >= 0.01 ? 100000 : 1000000)).toFixed(2)) }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {
+          "ignoreConversionErrors": true
+        }
+      },
+      "id": "3c000001-0000-4000-8000-000000000010",
+      "name": "3b. ETL Edit Fields (Normalize & Type-Cast)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "compare": "selectedFields",
+        "fieldsToCompare": "symbol",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000011",
+      "name": "3c. ETL Remove Duplicates (By Ticker)",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 1.1,
+      "position": [
+        1140,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-price-gt-0",
+              "leftValue": "={{ $json.price }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000012",
+      "name": "3d. ETL Filter (Drop Untraded / Invalid Quotes)",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1380,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ml_silver_daily_stock_quotes",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "market_date": "={{ $now.toFormat('yyyy-MM-dd') }}",
+            "symbol": "={{ $json.symbol }}",
+            "name": "={{ $json.name }}",
+            "price": "={{ $json.price }}",
+            "change_points": "={{ $json.change_points }}",
+            "percent_change": "={{ $json.percent_change }}",
+            "volume": "={{ $json.volume }}",
+            "value_traded": "={{ $json.value_traded }}",
+            "trades": "={{ $json.trades }}",
+            "div_per_share_ttm": "={{ $json.div_per_share_ttm }}",
+            "dividend_yield_ttm": "={{ $json.dividend_yield_ttm }}",
+            "board_lot": "={{ $json.board_lot }}",
+            "min_investment": "={{ $json.min_investment }}"
+          },
+          "matchingColumns": [
+            "market_date",
+            "symbol"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "market_date",
+              "displayName": "market_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "symbol",
+              "displayName": "symbol",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "price",
+              "displayName": "price",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "change_points",
+              "displayName": "change_points",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "percent_change",
+              "displayName": "percent_change",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "volume",
+              "displayName": "volume",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "value_traded",
+              "displayName": "value_traded",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "trades",
+              "displayName": "trades",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "div_per_share_ttm",
+              "displayName": "div_per_share_ttm",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "dividend_yield_ttm",
+              "displayName": "dividend_yield_ttm",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "board_lot",
+              "displayName": "board_lot",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "min_investment",
+              "displayName": "min_investment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "cleaned_at",
+              "displayName": "cleaned_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": false,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000013",
+      "name": "3e. Postgres Silver: Upsert Filtered Daily Stock Quotes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1660,
+        980
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qcf4JLMVO7YYOUKK",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldsToSummarize": {
+          "values": [
+            {
+              "aggregation": "sum",
+              "field": "value_traded"
+            },
+            {
+              "aggregation": "sum",
+              "field": "volume"
+            },
+            {
+              "aggregation": "sum",
+              "field": "trades"
+            },
+            {
+              "aggregation": "count",
+              "field": "symbol"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000014",
+      "name": "4a. ETL Summarize (Total Turnover & Volume)",
+      "type": "n8n-nodes-base.summarize",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-gainer",
+              "leftValue": "={{ $json.percent_change }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000015",
+      "name": "4b. ETL Filter Gainers (% Chg > 0)",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1660,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "percent_change",
+              "order": "descending"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000016",
+      "name": "4c. ETL Sort Gainers DESC",
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "maxItems": 3
+      },
+      "id": "3c000001-0000-4000-8000-000000000017",
+      "name": "4d. ETL Limit Top 3 Gainers",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "top_gainers",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000018",
+      "name": "4e. ETL Aggregate Top Gainers",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-loser",
+              "leftValue": "={{ $json.percent_change }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000019",
+      "name": "5b. ETL Filter Losers (% Chg < 0)",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1660,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "percent_change",
+              "order": "ascending"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000020",
+      "name": "5c. ETL Sort Losers ASC",
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "maxItems": 3
+      },
+      "id": "3c000001-0000-4000-8000-000000000021",
+      "name": "5d. ETL Limit Top 3 Losers",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "top_losers",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000022",
+      "name": "5e. ETL Aggregate Top Losers",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "sortFieldsUi": {
+          "sortField": [
+            {
+              "fieldName": "value_traded",
+              "order": "descending"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000023",
+      "name": "6c. ETL Sort Most Active DESC",
+      "type": "n8n-nodes-base.sort",
+      "typeVersion": 1,
+      "position": [
+        1880,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "maxItems": 3
+      },
+      "id": "3c000001-0000-4000-8000-000000000024",
+      "name": "6d. ETL Limit Top 3 Most Active",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "most_active",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000025",
+      "name": "6e. ETL Aggregate Most Active",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        840
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-div-watchlist",
+              "leftValue": "={{ ['GLO', 'TEL', 'SCC', 'RCR', 'LTG', 'MBT', 'MREIT', 'DMC'].includes($json.symbol) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000036",
+      "name": "6f. ETL Filter Dividend Yield Watchlist (GLO, TEL, SCC, RCR, LTG, MBT, MREIT, DMC)",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1880,
+        1000
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "dividend_yield_stocks",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000037",
+      "name": "6g. ETL Aggregate Dividend Yield Watchlist",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        1000
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-reit-watchlist",
+              "leftValue": "={{ ['FILRT', 'RCR', 'CREIT', 'AREIT', 'MREIT', 'PREIT'].includes($json.symbol) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000038",
+      "name": "6h. ETL Filter REITs Watchlist (FILRT, RCR, CREIT, AREIT, MREIT, PREIT)",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        1880,
+        1160
+      ]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "reit_stocks",
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000039",
+      "name": "6i. ETL Aggregate REITs Watchlist",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        2320,
+        1160
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "numberInputs": 7,
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000026",
+      "name": "7. ETL Merge All Transformed Streams",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2620,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ml_gold_daily_market_wrap",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "market_date": "={{ $now.toFormat('yyyy-MM-dd') }}",
+            "as_of_label": "={{ $json.output?.as_of || $now.toFormat('MMMM dd, yyyy') }}",
+            "psei_close": "={{ $json.output?.psei_close }}",
+            "psei_up_down": "={{ $json.output?.psei_up_down }}",
+            "psei_arrow": "={{ $json.output?.psei_arrow }}",
+            "psei_change_pts": "={{ $json.output?.psei_change_pts }}",
+            "psei_change_pct": "={{ $json.output?.psei_change_pct }}",
+            "advancers": "={{ $json.output?.advancers }}",
+            "decliners": "={{ $json.output?.decliners }}",
+            "unchanged": "={{ $json.output?.unchanged }}",
+            "total_volume": "={{ $json.output?.total_volume }}",
+            "total_trades": "={{ $json.output?.total_trades }}",
+            "total_value_turnover": "={{ $json.output?.total_value_turnover }}",
+            "all_shares_arrow": "={{ $json.output?.all_shares_arrow }}",
+            "all_shares_close": "={{ $json.output?.all_shares_close }}",
+            "all_shares_change_pts": "={{ $json.output?.all_shares_change_pts }}",
+            "all_shares_pct": "={{ $json.output?.all_shares_pct }}",
+            "financials_arrow": "={{ $json.output?.financials_arrow }}",
+            "financials_close": "={{ $json.output?.financials_close }}",
+            "financials_change_pts": "={{ $json.output?.financials_change_pts }}",
+            "financials_pct": "={{ $json.output?.financials_pct }}",
+            "industrial_arrow": "={{ $json.output?.industrial_arrow }}",
+            "industrial_close": "={{ $json.output?.industrial_close }}",
+            "industrial_change_pts": "={{ $json.output?.industrial_change_pts }}",
+            "industrial_pct": "={{ $json.output?.industrial_pct }}",
+            "holding_firms_arrow": "={{ $json.output?.holding_firms_arrow }}",
+            "holding_firms_close": "={{ $json.output?.holding_firms_close }}",
+            "holding_firms_change_pts": "={{ $json.output?.holding_firms_change_pts }}",
+            "holding_firms_pct": "={{ $json.output?.holding_firms_pct }}",
+            "property_arrow": "={{ $json.output?.property_arrow }}",
+            "property_close": "={{ $json.output?.property_close }}",
+            "property_change_pts": "={{ $json.output?.property_change_pts }}",
+            "property_pct": "={{ $json.output?.property_pct }}",
+            "services_arrow": "={{ $json.output?.services_arrow }}",
+            "services_close": "={{ $json.output?.services_close }}",
+            "services_change_pts": "={{ $json.output?.services_change_pts }}",
+            "services_pct": "={{ $json.output?.services_pct }}",
+            "mining_oil_arrow": "={{ $json.output?.mining_oil_arrow }}",
+            "mining_oil_close": "={{ $json.output?.mining_oil_close }}",
+            "mining_oil_change_pts": "={{ $json.output?.mining_oil_change_pts }}",
+            "mining_oil_pct": "={{ $json.output?.mining_oil_pct }}",
+            "psei_total_return_close": "={{ $json.output?.psei_total_return_close }}",
+            "pse_divy_close": "={{ $json.output?.pse_divy_close }}",
+            "pse_midcap_close": "={{ $json.output?.pse_midcap_close }}",
+            "sectors_summary": "={{ $json.output?.sectors_summary || [] }}",
+            "dividend_yield_stocks": "={{ $json.dividend_yield_stocks || [] }}",
+            "reit_stocks": "={{ $json.reit_stocks || [] }}",
+            "top_gainers": "={{ $json.top_gainers || [] }}",
+            "top_losers": "={{ $json.top_losers || [] }}",
+            "most_active": "={{ ($json.most_active || []).map((s, i) => ({ rank: i + 1, ...s })) }}",
+            "publish_status": "ready"
+          },
+          "matchingColumns": [
+            "market_date"
+          ],
+          "schema": [
+            {
+              "id": "market_date",
+              "displayName": "market_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "as_of_label",
+              "displayName": "as_of_label",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "psei_close",
+              "displayName": "psei_close",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "psei_up_down",
+              "displayName": "psei_up_down",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "psei_arrow",
+              "displayName": "psei_arrow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "psei_change_pts",
+              "displayName": "psei_change_pts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "psei_change_pct",
+              "displayName": "psei_change_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "advancers",
+              "displayName": "advancers",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "decliners",
+              "displayName": "decliners",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "unchanged",
+              "displayName": "unchanged",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "total_volume",
+              "displayName": "total_volume",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "total_trades",
+              "displayName": "total_trades",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "total_value_turnover",
+              "displayName": "total_value_turnover",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "all_shares_arrow",
+              "displayName": "all_shares_arrow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "all_shares_close",
+              "displayName": "all_shares_close",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "all_shares_change_pts",
+              "displayName": "all_shares_change_pts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "all_shares_pct",
+              "displayName": "all_shares_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "financials_arrow",
+              "displayName": "financials_arrow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "financials_close",
+              "displayName": "financials_close",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "financials_change_pts",
+              "displayName": "financials_change_pts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "financials_pct",
+              "displayName": "financials_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "industrial_arrow",
+              "displayName": "industrial_arrow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "industrial_close",
+              "displayName": "industrial_close",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "industrial_change_pts",
+              "displayName": "industrial_change_pts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "industrial_pct",
+              "displayName": "industrial_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "holding_firms_arrow",
+              "displayName": "holding_firms_arrow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "holding_firms_close",
+              "displayName": "holding_firms_close",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "holding_firms_change_pts",
+              "displayName": "holding_firms_change_pts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "holding_firms_pct",
+              "displayName": "holding_firms_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "property_arrow",
+              "displayName": "property_arrow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "property_close",
+              "displayName": "property_close",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "property_change_pts",
+              "displayName": "property_change_pts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "property_pct",
+              "displayName": "property_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "services_arrow",
+              "displayName": "services_arrow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "services_close",
+              "displayName": "services_close",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "services_change_pts",
+              "displayName": "services_change_pts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "services_pct",
+              "displayName": "services_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "mining_oil_arrow",
+              "displayName": "mining_oil_arrow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "mining_oil_close",
+              "displayName": "mining_oil_close",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "mining_oil_change_pts",
+              "displayName": "mining_oil_change_pts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "mining_oil_pct",
+              "displayName": "mining_oil_pct",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "sectors_summary",
+              "displayName": "sectors_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "dividend_yield_stocks",
+              "displayName": "dividend_yield_stocks",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "reit_stocks",
+              "displayName": "reit_stocks",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "top_gainers",
+              "displayName": "top_gainers",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "top_losers",
+              "displayName": "top_losers",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "most_active",
+              "displayName": "most_active",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "canva_graphic_caption",
+              "displayName": "canva_graphic_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "social_post_caption",
+              "displayName": "social_post_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "send_email_blast",
+              "displayName": "send_email_blast",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "canva_exported_png_url",
+              "displayName": "canva_exported_png_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "psei_total_return_close",
+              "displayName": "psei_total_return_close",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "pse_divy_close",
+              "displayName": "pse_divy_close",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "pse_midcap_close",
+              "displayName": "pse_midcap_close",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "publish_status",
+              "displayName": "publish_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "3c000001-0000-4000-8000-000000000030",
+      "name": "8. Postgres Gold: Save Daily Market Wrap (Staging)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2880,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qcf4JLMVO7YYOUKK",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger (4:30 PM PHT Mon-Fri)": {
+      "main": [
+        [
+          {
+            "node": "1a. Firecrawl (Scrape PSE Edge Index & Breadth)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "1b. Apify (Scrape PSE Disclosures & Official Frames)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "1c. Ingest PSE Stock Universe (TradingView Scanner)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1a. Firecrawl (Scrape PSE Edge Index & Breadth)": {
+      "main": [
+        [
+          {
+            "node": "2a. Postgres Bronze: Save Raw Firecrawl Markdown & HTML (ML Lake)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "2b. Information Extractor (Structure Firecrawl Output)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2b. Information Extractor (Structure Firecrawl Output)": {
+      "main": [
+        [
+          {
+            "node": "7. ETL Merge All Transformed Streams",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1b. Apify (Scrape PSE Disclosures & Official Frames)": {
+      "main": [
+        [
+          {
+            "node": "2c. Postgres Bronze: Save Raw Apify Dataset (ML Lake)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1c. Ingest PSE Stock Universe (TradingView Scanner)": {
+      "main": [
+        [
+          {
+            "node": "2d. Postgres Bronze: Save Raw Stock Universe Payload (ML Lake)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "3a. ETL Split Out (Unpack Stock Array)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3a. ETL Split Out (Unpack Stock Array)": {
+      "main": [
+        [
+          {
+            "node": "3b. ETL Edit Fields (Normalize & Type-Cast)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3b. ETL Edit Fields (Normalize & Type-Cast)": {
+      "main": [
+        [
+          {
+            "node": "3c. ETL Remove Duplicates (By Ticker)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3c. ETL Remove Duplicates (By Ticker)": {
+      "main": [
+        [
+          {
+            "node": "3d. ETL Filter (Drop Untraded / Invalid Quotes)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3d. ETL Filter (Drop Untraded / Invalid Quotes)": {
+      "main": [
+        [
+          {
+            "node": "3e. Postgres Silver: Upsert Filtered Daily Stock Quotes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "4a. ETL Summarize (Total Turnover & Volume)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "4b. ETL Filter Gainers (% Chg > 0)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "5b. ETL Filter Losers (% Chg < 0)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "6c. ETL Sort Most Active DESC",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "6f. ETL Filter Dividend Yield Watchlist (GLO, TEL, SCC, RCR, LTG, MBT, MREIT, DMC)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "6h. ETL Filter REITs Watchlist (FILRT, RCR, CREIT, AREIT, MREIT, PREIT)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4a. ETL Summarize (Total Turnover & Volume)": {
+      "main": [
+        [
+          {
+            "node": "7. ETL Merge All Transformed Streams",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "4b. ETL Filter Gainers (% Chg > 0)": {
+      "main": [
+        [
+          {
+            "node": "4c. ETL Sort Gainers DESC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4c. ETL Sort Gainers DESC": {
+      "main": [
+        [
+          {
+            "node": "4d. ETL Limit Top 3 Gainers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4d. ETL Limit Top 3 Gainers": {
+      "main": [
+        [
+          {
+            "node": "4e. ETL Aggregate Top Gainers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4e. ETL Aggregate Top Gainers": {
+      "main": [
+        [
+          {
+            "node": "7. ETL Merge All Transformed Streams",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "5b. ETL Filter Losers (% Chg < 0)": {
+      "main": [
+        [
+          {
+            "node": "5c. ETL Sort Losers ASC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5c. ETL Sort Losers ASC": {
+      "main": [
+        [
+          {
+            "node": "5d. ETL Limit Top 3 Losers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5d. ETL Limit Top 3 Losers": {
+      "main": [
+        [
+          {
+            "node": "5e. ETL Aggregate Top Losers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5e. ETL Aggregate Top Losers": {
+      "main": [
+        [
+          {
+            "node": "7. ETL Merge All Transformed Streams",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "6c. ETL Sort Most Active DESC": {
+      "main": [
+        [
+          {
+            "node": "6d. ETL Limit Top 3 Most Active",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6d. ETL Limit Top 3 Most Active": {
+      "main": [
+        [
+          {
+            "node": "6e. ETL Aggregate Most Active",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6e. ETL Aggregate Most Active": {
+      "main": [
+        [
+          {
+            "node": "7. ETL Merge All Transformed Streams",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "7. ETL Merge All Transformed Streams": {
+      "main": [
+        [
+          {
+            "node": "8. Postgres Gold: Save Daily Market Wrap (Staging)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6f. ETL Filter Dividend Yield Watchlist (GLO, TEL, SCC, RCR, LTG, MBT, MREIT, DMC)": {
+      "main": [
+        [
+          {
+            "node": "6g. ETL Aggregate Dividend Yield Watchlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6g. ETL Aggregate Dividend Yield Watchlist": {
+      "main": [
+        [
+          {
+            "node": "7. ETL Merge All Transformed Streams",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "6h. ETL Filter REITs Watchlist (FILRT, RCR, CREIT, AREIT, MREIT, PREIT)": {
+      "main": [
+        [
+          {
+            "node": "6i. ETL Aggregate REITs Watchlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6i. ETL Aggregate REITs Watchlist": {
+      "main": [
+        [
+          {
+            "node": "7. ETL Merge All Transformed Streams",
+            "type": "main",
+            "index": 6
+          }
+        ]
+      ]
+    },
+    "Manual Trigger (Run ETL Ingestion)": {
+      "main": [
+        [
+          {
+            "node": "1a. Firecrawl (Scrape PSE Edge Index & Breadth)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "1b. Apify (Scrape PSE Disclosures & Official Frames)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "1c. Ingest PSE Stock Universe (TradingView Scanner)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

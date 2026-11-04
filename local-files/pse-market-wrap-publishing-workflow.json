@@ -1,0 +1,654 @@
+{
+  "name": "PSE Daily Market Wrap - 2. Publishing & Social Media Distribution",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "3d000001-0000-4000-8000-000000000001",
+      "name": "Manual Trigger (Publish Market Wrap)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "00 17 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "3d000001-0000-4000-8000-000000000002",
+      "name": "Schedule Trigger (5:00 PM PHT Mon-Fri)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publish-pse-market-wrap",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "3d000001-0000-4000-8000-000000000003",
+      "name": "Webhook Trigger (Publish On Demand)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        100,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM ml_gold_daily_market_wrap WHERE publish_status = 'ready' ORDER BY market_date DESC LIMIT 1;",
+        "options": {}
+      },
+      "id": "3d000001-0000-4000-8000-000000000004",
+      "name": "1. Postgres: Fetch Pending Market Wrap",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        380,
+        420
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qcf4JLMVO7YYOUKK",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-wrap-exists",
+              "leftValue": "={{ $json.market_date }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3d000001-0000-4000-8000-000000000005",
+      "name": "2. Is Market Data Ready? (IF)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        680,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chatMessage",
+        "operation": "sendAndWait",
+        "chatId": "YOUR_TEAMS_CHAT_ID",
+        "message": "=📈 **PSE Market Wrap Ready ({{ $json.as_of_label || $json.market_date }})**\n\n**1. PSEi & Breadth**\n• **PSEi:** {{ $json.psei_close }} ({{ $json.psei_arrow }} {{ $json.psei_up_down }} | {{ $json.psei_change_pts }} pts | {{ $json.psei_change_pct }}%)\n• **Value Turnover:** ₱{{ Number($json.total_value_turnover || 0).toLocaleString() }}\n• **Trades:** {{ Number($json.total_trades || 0).toLocaleString() }}\n• **Breadth:** {{ $json.advancers }} Adv | {{ $json.decliners }} Dec | {{ $json.unchanged }} Unch\n\n**2. Sector Indices**\n• All Shares: {{ $json.all_shares_arrow }} {{ $json.all_shares_close }} ({{ $json.all_shares_pct }}% | {{ $json.all_shares_change_pts }} pts)\n• Financial: {{ $json.financials_arrow }} {{ $json.financials_close }} ({{ $json.financials_pct }}% | {{ $json.financials_change_pts }} pts)\n• Industrial: {{ $json.industrial_arrow }} {{ $json.industrial_close }} ({{ $json.industrial_pct }}% | {{ $json.industrial_change_pts }} pts)\n• Holding Firms: {{ $json.holding_firms_arrow }} {{ $json.holding_firms_close }} ({{ $json.holding_firms_pct }}% | {{ $json.holding_firms_change_pts }} pts)\n• Property: {{ $json.property_arrow }} {{ $json.property_close }} ({{ $json.property_pct }}% | {{ $json.property_change_pts }} pts)\n• Services: {{ $json.services_arrow }} {{ $json.services_close }} ({{ $json.services_pct }}% | {{ $json.services_change_pts }} pts)\n• Mining & Oil: {{ $json.mining_oil_arrow }} {{ $json.mining_oil_close }} ({{ $json.mining_oil_pct }}% | {{ $json.mining_oil_change_pts }} pts)\n\n**3. Most Active (Top 3)**\n{{ (typeof $json.most_active === 'string' ? JSON.parse($json.most_active) : ($json.most_active || [])).map((s, idx) => (idx + 1) + '. ' + s.symbol + ' (' + s.name + ') | ' + s.price_formatted + ' | ' + s.percent_change_formatted + ' | ' + s.value_traded_formatted + ' | ' + s.trades_formatted + ' trades').join('\\n') }}\n\n**4. Dividend Yield Watchlist**\n{{ (typeof $json.dividend_yield_stocks === 'string' ? JSON.parse($json.dividend_yield_stocks) : ($json.dividend_yield_stocks || [])).map(s => '• ' + s.symbol + ': ' + s.price_formatted + ' (' + s.percent_change_formatted + ') | DPS: ₱' + s.div_per_share_ttm + ' | Yield: ' + s.dividend_yield_ttm + '% | Min Inv: ₱' + s.min_investment).join('\\n') }}\n\n**5. REITs Watchlist**\n{{ (typeof $json.reit_stocks === 'string' ? JSON.parse($json.reit_stocks) : ($json.reit_stocks || [])).map(s => '• ' + s.symbol + ': ' + s.price_formatted + ' (' + s.percent_change_formatted + ') | Turnover: ' + s.value_traded_formatted + ' | Yield: ' + s.dividend_yield_ttm + '% | Min Inv: ₱' + s.min_investment).join('\\n') }}\n\nPlease click below to provide:\n1. **Canva Graphic Caption** (1-paragraph Market Explanation)\n2. **Social Media Post Caption** (for Facebook, Instagram & Email)\n3. **Send Email Blast?** (No / Yes)",
+        "responseType": "customForm",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Canva Graphic Caption",
+              "fieldType": "textarea",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Social Media Post Caption",
+              "fieldType": "textarea",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Send Email Blast?",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "No"
+                  },
+                  {
+                    "option": "Yes"
+                  }
+                ]
+              },
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3d000001-0000-4000-8000-000000000006",
+      "name": "3. Microsoft Teams (Request Canva & Social Captions)",
+      "type": "n8n-nodes-base.microsoftTeams",
+      "typeVersion": 2,
+      "position": [
+        980,
+        420
+      ],
+      "credentials": {
+        "microsoftTeamsOAuth2Api": {
+          "id": "IwBQqE9yzGpi83Kx",
+          "name": "Microsoft Teams account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "map-graphic-caption",
+              "name": "canva_graphic_caption",
+              "value": "={{ $json.data['Canva Graphic Caption'] }}",
+              "type": "string"
+            },
+            {
+              "id": "map-social-caption",
+              "name": "social_post_caption",
+              "value": "={{ $json.data['Social Media Post Caption'] }}",
+              "type": "string"
+            },
+            {
+              "id": "map-email-blast",
+              "name": "send_email_blast",
+              "value": "={{ $json.data['Send Email Blast?'] }}",
+              "type": "string"
+            },
+            {
+              "id": "map-market-date",
+              "name": "market_date",
+              "value": "={{ $('1. Postgres: Fetch Pending Market Wrap').item.json.market_date }}",
+              "type": "string"
+            },
+            {
+              "id": "map-psei-close",
+              "name": "psei_close",
+              "value": "={{ $('1. Postgres: Fetch Pending Market Wrap').item.json.psei_close }}",
+              "type": "number"
+            },
+            {
+              "id": "map-canva-autofill",
+              "name": "canva_autofill_data",
+              "value": "={{ (() => { const m = $('1. Postgres: Fetch Pending Market Wrap').item.json; const parse = (v) => (typeof v === 'string' ? JSON.parse(v || '[]') : (v || [])); const mostActive = parse(m.most_active); const divStocks = parse(m.dividend_yield_stocks); const reitStocks = parse(m.reit_stocks); const t = (v) => ({ type: 'text', text: String(v ?? '') }); const d = { as_of: t(m.as_of_label || m.market_date), psei_value: t(m.psei_close), psei_up_down: t(m.psei_up_down), psei_arrow: t(m.psei_arrow), psei_change_pts: t(m.psei_change_pts), psei_change_pct: t((m.psei_change_pct ?? 0) + '%'), value_turnover: t('₱' + Number(m.total_value_turnover || 0).toLocaleString()), advancers: t(m.advancers), decliners: t(m.decliners), unchanged: t(m.unchanged), explanation: t($json.data['Canva Graphic Caption'] || ''), all_shares_arrow: t(m.all_shares_arrow), all_shares_value: t(m.all_shares_close), all_shares_chg_pct: t((m.all_shares_pct ?? 0) + '%'), all_shares_chg_pts: t(m.all_shares_change_pts), financial_arrow: t(m.financials_arrow), financial_value: t(m.financials_close), financial_chg_pct: t((m.financials_pct ?? 0) + '%'), financial_chg_pts: t(m.financials_change_pts), industrial_arrow: t(m.industrial_arrow), industrial_value: t(m.industrial_close), industrial_chg_pct: t((m.industrial_pct ?? 0) + '%'), industrial_chg_pts: t(m.industrial_change_pts), holding_firms_arrow: t(m.holding_firms_arrow), holding_firms_value: t(m.holding_firms_close), holding_firms_chg_pct: t((m.holding_firms_pct ?? 0) + '%'), holding_firms_chg_pts: t(m.holding_firms_change_pts), property_arrow: t(m.property_arrow), property_value: t(m.property_close), property_chg_pct: t((m.property_pct ?? 0) + '%'), property_chg_pts: t(m.property_change_pts), services_arrow: t(m.services_arrow), services_value: t(m.services_close), services_chg_pct: t((m.services_pct ?? 0) + '%'), services_chg_pts: t(m.services_change_pts), mining_oil_arrow: t(m.mining_oil_arrow), mining_oil_value: t(m.mining_oil_close), mining_oil_chg_pct: t((m.mining_oil_pct ?? 0) + '%'), mining_oil_chg_pts: t(m.mining_oil_change_pts) }; mostActive.slice(0, 3).forEach((s, idx) => { const n = idx + 1; d['most_active_' + n + '_rank'] = t(n); d['most_active_' + n + '_symbol'] = t(s.symbol); d['most_active_' + n + '_name'] = t(s.name); d['most_active_' + n + '_price'] = t(s.price_formatted); d['most_active_' + n + '_chg_pct'] = t(s.percent_change_formatted); d['most_active_' + n + '_value_traded'] = t(s.value_traded_formatted); d['most_active_' + n + '_trades'] = t(s.trades_formatted); }); divStocks.forEach((s) => { d['div_' + s.symbol + '_price'] = t(s.price_formatted); d['div_' + s.symbol + '_chg_pct'] = t(s.percent_change_formatted); d['div_' + s.symbol + '_dps'] = t('₱' + Number(s.div_per_share_ttm || 0).toFixed(2)); d['div_' + s.symbol + '_yield'] = t(Number(s.dividend_yield_ttm || 0).toFixed(2) + '%'); d['div_' + s.symbol + '_min_inv'] = t('₱' + Number(s.min_investment || 0).toLocaleString()); }); reitStocks.forEach((s) => { d['reit_' + s.symbol + '_price'] = t(s.price_formatted); d['reit_' + s.symbol + '_chg_pct'] = t(s.percent_change_formatted); d['reit_' + s.symbol + '_turnover'] = t(s.value_traded_formatted); d['reit_' + s.symbol + '_yield'] = t(Number(s.dividend_yield_ttm || 0).toFixed(2) + '%'); d['reit_' + s.symbol + '_min_inv'] = t('₱' + Number(s.min_investment || 0).toLocaleString()); }); return d; })() }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3d000001-0000-4000-8000-000000000007",
+      "name": "4. Edit Fields (Prepare Canva Autofill & Social Payloads)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1280,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "autofill",
+        "operation": "create",
+        "brandTemplateId": "YOUR_CANVA_BRAND_TEMPLATE_ID",
+        "data": "={{ JSON.stringify($json.canva_autofill_data) }}",
+        "title": "={{ 'PSE Market Wrap - ' + ($('1. Postgres: Fetch Pending Market Wrap').item.json.as_of_label || $('1. Postgres: Fetch Pending Market Wrap').item.json.market_date) }}",
+        "pollInterval": 2000,
+        "maxWait": 120
+      },
+      "id": "3d000001-0000-4000-8000-000000000008",
+      "name": "5. Canva (Autofill Brand Template)",
+      "type": "@canva/n8n-nodes-canva.canva",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        420
+      ],
+      "credentials": {
+        "canvaOAuth2Api": {
+          "id": "Y3eOm82Af6cv41AZ",
+          "name": "Canva account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "export",
+        "operation": "export",
+        "designId": "={{ $json.job.result.design.id }}",
+        "format": "png",
+        "pages": "",
+        "pollInterval": 2000,
+        "maxWait": 180
+      },
+      "id": "3d000001-0000-4000-8000-000000000009",
+      "name": "6. Canva (Export PNG)",
+      "type": "@canva/n8n-nodes-canva.canva",
+      "typeVersion": 1,
+      "position": [
+        1840,
+        420
+      ],
+      "credentials": {
+        "canvaOAuth2Api": {
+          "id": "Y3eOm82Af6cv41AZ",
+          "name": "Canva account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v21.0",
+        "node": "YOUR_FACEBOOK_PAGE_ID",
+        "edge": "photos",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "url",
+                "value": "={{ $json.job?.urls?.[0] || $json.url }}"
+              },
+              {
+                "name": "caption",
+                "value": "={{ $('4. Edit Fields (Prepare Canva Autofill & Social Payloads)').item.json.social_post_caption }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3d000001-0000-4000-8000-000000000010",
+      "name": "7a. Facebook Graph API (Post Page Photo)",
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        2140,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v21.0",
+        "node": "YOUR_INSTAGRAM_BUSINESS_ID",
+        "edge": "media",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "image_url",
+                "value": "={{ $json.job?.urls?.[0] || $json.url }}"
+              },
+              {
+                "name": "caption",
+                "value": "={{ $('4. Edit Fields (Prepare Canva Autofill & Social Payloads)').item.json.social_post_caption }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3d000001-0000-4000-8000-000000000011",
+      "name": "7b. Instagram (Create Media Container)",
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        2140,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "httpRequestMethod": "POST",
+        "graphApiVersion": "v21.0",
+        "node": "YOUR_INSTAGRAM_BUSINESS_ID",
+        "edge": "media_publish",
+        "options": {
+          "queryParameters": {
+            "parameter": [
+              {
+                "name": "creation_id",
+                "value": "={{ $json.id }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3d000001-0000-4000-8000-000000000012",
+      "name": "7c. Instagram (Publish Media)",
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [
+        2420,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-email-blast",
+              "leftValue": "={{ $('4. Edit Fields (Prepare Canva Autofill & Social Payloads)').item.json.send_email_blast }}",
+              "rightValue": "Yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3d000001-0000-4000-8000-000000000013",
+      "name": "7d. Email Blast Selected? (IF)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2140,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "marketwrap@yourdomain.com",
+        "toEmail": "subscribers@yourdomain.com",
+        "subject": "=PSE Market Wrap — PSEi {{ $('4. Edit Fields (Prepare Canva Autofill & Social Payloads)').item.json.psei_close }}",
+        "html": "=<h2>PSE Daily Market Wrap</h2><p style=\"white-space:pre-line\">{{ $('4. Edit Fields (Prepare Canva Autofill & Social Payloads)').item.json.social_post_caption }}</p><p><img src=\"{{ $('6. Canva (Export PNG)').item.json.job?.urls?.[0] || $('6. Canva (Export PNG)').item.json.url }}\" width=\"600\" /></p>",
+        "options": {}
+      },
+      "id": "3d000001-0000-4000-8000-000000000014",
+      "name": "7e. Send Email Blast (Custom SMTP)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2420,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "ml_gold_daily_market_wrap",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "market_date": "={{ $('1. Postgres: Fetch Pending Market Wrap').item.json.market_date }}",
+            "publish_status": "published",
+            "canva_graphic_caption": "={{ $('4. Edit Fields (Prepare Canva Autofill & Social Payloads)').item.json.canva_graphic_caption }}",
+            "social_post_caption": "={{ $('4. Edit Fields (Prepare Canva Autofill & Social Payloads)').item.json.social_post_caption }}",
+            "send_email_blast": "={{ $('4. Edit Fields (Prepare Canva Autofill & Social Payloads)').item.json.send_email_blast }}",
+            "canva_exported_png_url": "={{ $json.job?.urls?.[0] || $json.url }}",
+            "published_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "market_date"
+          ],
+          "schema": [
+            {
+              "id": "market_date",
+              "displayName": "market_date",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "publish_status",
+              "displayName": "publish_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "canva_graphic_caption",
+              "displayName": "canva_graphic_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "social_post_caption",
+              "displayName": "social_post_caption",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "send_email_blast",
+              "displayName": "send_email_blast",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "canva_exported_png_url",
+              "displayName": "canva_exported_png_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "published_at",
+              "displayName": "published_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "3d000001-0000-4000-8000-000000000015",
+      "name": "8. Postgres Gold: Mark As Published",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2420,
+        240
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "qcf4JLMVO7YYOUKK",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger (Publish Market Wrap)": {
+      "main": [
+        [
+          {
+            "node": "1. Postgres: Fetch Pending Market Wrap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger (5:00 PM PHT Mon-Fri)": {
+      "main": [
+        [
+          {
+            "node": "1. Postgres: Fetch Pending Market Wrap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger (Publish On Demand)": {
+      "main": [
+        [
+          {
+            "node": "1. Postgres: Fetch Pending Market Wrap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Postgres: Fetch Pending Market Wrap": {
+      "main": [
+        [
+          {
+            "node": "2. Is Market Data Ready? (IF)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Is Market Data Ready? (IF)": {
+      "main": [
+        [
+          {
+            "node": "3. Microsoft Teams (Request Canva & Social Captions)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "3. Microsoft Teams (Request Canva & Social Captions)": {
+      "main": [
+        [
+          {
+            "node": "4. Edit Fields (Prepare Canva Autofill & Social Payloads)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Edit Fields (Prepare Canva Autofill & Social Payloads)": {
+      "main": [
+        [
+          {
+            "node": "5. Canva (Autofill Brand Template)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. Canva (Autofill Brand Template)": {
+      "main": [
+        [
+          {
+            "node": "6. Canva (Export PNG)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Canva (Export PNG)": {
+      "main": [
+        [
+          {
+            "node": "7a. Facebook Graph API (Post Page Photo)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "7b. Instagram (Create Media Container)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "7d. Email Blast Selected? (IF)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "8. Postgres Gold: Mark As Published",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7b. Instagram (Create Media Container)": {
+      "main": [
+        [
+          {
+            "node": "7c. Instagram (Publish Media)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7d. Email Blast Selected? (IF)": {
+      "main": [
+        [
+          {
+            "node": "7e. Send Email Blast (Custom SMTP)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
